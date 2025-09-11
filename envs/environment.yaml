@@ -1,0 +1,14 @@
+name: reroot_env
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - snakemake
+  - matUtils
+  - numpy
+  - pandas
+  - pip
+  - pip:
+      - taxoniumtools
+      - phylo-treetime
