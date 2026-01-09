@@ -1,1 +1,1 @@
-Hi
+This pipeline is intended to run treetime on viral usher trees. although tree time results are 
