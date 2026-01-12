@@ -16,8 +16,6 @@ import subprocess
 import sys
 import tempfile
 import treeswift
-
-#import viral_usher_trees
 import alter_gbff
 
 default_min_real_dates = 0.8
