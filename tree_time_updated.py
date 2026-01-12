@@ -16,7 +16,7 @@ import subprocess
 import sys
 import treeswift
 
-import viral_usher_trees
+#import viral_usher_trees
 import alter_gbff
 
 default_min_real_dates = 0.8
@@ -102,7 +102,9 @@ def run_treetime(path, min_real_dates):
     
     name_to_date, real_dates_proportion = get_dates(path)
     if real_dates_proportion < min_real_dates:
-        print(f"Tree {tree} has too low a proportion of dates ({real_dates_proportion:.2f} < {min_real_dates:.2f}), not running treetime. ")
+        with open(path + "/treetime.log", "w") as log_file:
+            log_file.write(f"Tree {tree} has too low a proportion of dates ({real_dates_proportion:.2f} < {min_real_dates:.2f}), not running treetime. \n")
+        #print(f"Tree {tree} has too low a proportion of dates ({real_dates_proportion:.2f} < {min_real_dates:.2f}), not running treetime. ")
         sys.exit(0)
     refseq_len = get_refseq_len(path)
     #made it here
@@ -114,7 +116,9 @@ def run_treetime(path, min_real_dates):
                "--dates", path + "/dates.csv",
                "--outdir", path + "/treetime_out"]
     try:
-        subprocess.run(command, check=True)
+        #subprocess.run(command, check=True)
+        with open(path + "/treetime.log", "w") as log_file:
+            subprocess.run(command, stdout=log_file)
     except Exception as e:
         print(f"treetime command ({' '.join(command)}) failed: {e}", file=sys.stderr)
         sys.exit(1)

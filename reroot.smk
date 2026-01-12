@@ -1,28 +1,23 @@
-import os
+configfile: "config.yaml"
 
-#make this a variable?
-tree_dir = "viral_usher_trees/trees/"
-
-# Only keep directories that contain a .pb.gz file with the same name
-
-trees = []
-for d in os.listdir(tree_dir):
-    trees.append(d)
+trees = config["viruses"]
+#note this must be the path all the way to viral_usher_trees/trees
+path_to_viruses = config["path_to_viruses"]
 
 rule all:
     input:
-        expand("viral_usher_trees/trees/{tree}/treetime_out/rerooted.newick", tree=trees)
+        expand(f"{path_to_viruses}/{{tree}}/treetime.log", tree=trees)
 
 rule reroot:
+    input:
+        virus_dir=f"{path_to_viruses}/{{tree}}/"
     output:
-        "viral_usher_trees/trees/{tree}/treetime_out/rerooted.newick"
-    params:
-        tree_dir = tree_dir
+        treetime_log=f"{path_to_viruses}/{{tree}}/treetime.log"
     resources:
         mem_mb=4000,
         runtime=720,
         slurm_partition="medium"
     shell:
         """
-        python3 tree_time.py -v {wildcards.tree} -d {params.tree_dir}/
+        python3 tree_time_updated.py -t {input.virus_dir}
         """
