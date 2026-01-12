@@ -91,38 +91,53 @@ def get_refseq_len(subdir_path):
     return ref_length
 
 
-def run_treetime(tree, min_real_dates):
-    """Format input for treetime clock and run it"""
-    subdir_path = viral_usher_trees.trees_dir + "/" + tree
-    if not os.path.isdir(subdir_path):
-        print(f"{viral_usher_trees.trees_dir} does not have a subdirectory {tree}, check spelling", file=sys.stderr)
+def run_treetime(path, min_real_dates):
+    """Format input for treetime clock, run it and apply the same rooting to viz.pb.gz"""
+    tree = path.strip("/") + "/optimized.pb.gz"
+    path = path.strip("/")
+
+    #subdir_path = viral_usher_trees.trees_dir + "/" + tree
+    #print(subdir_path)
+    #if not os.path.isdir(subdir_path):
+    #    print(f"{tree} does not have a subdirectory {tree}, check spelling", file=sys.stderr)
+    #    sys.exit(1)
+    if not os.path.isfile(tree):
+        print(f"Tree file {tree} not found, check spelling", file=sys.stderr)
         sys.exit(1)
-    if not os.path.exists(subdir_path + "/metadata.tsv.gz") or not os.path.exists(subdir_path + "/output_stats.tsv"):
-        print(f"Expected files not found in {subdir_path}, has the tree been built?", file=sys.stderr)
+
+    if not os.path.exists(path + "/metadata.tsv.gz") or not os.path.exists(path + "/output_stats.tsv"):
+        print(f"Expected files not found in {path}, has the tree been built?", file=sys.stderr)
         sys.exit(1)
-    name_to_date, real_dates_proportion = get_dates(subdir_path)
+    
+    name_to_date, real_dates_proportion = get_dates(path)
     if real_dates_proportion < min_real_dates:
-        print(f"Tree {tree} has too low a proportion of dates ({real_dates_proportion:.2f} < {min_real_dates:.2f}), not running treetime. ")
+        with open(path + "/treetime.log", "w") as log_file:
+            log_file.write(f"Tree {tree} has too low a proportion of dates ({real_dates_proportion:.2f} < {min_real_dates:.2f}), not running treetime. \n")
+        #print(f"Tree {tree} has too low a proportion of dates ({real_dates_proportion:.2f} < {min_real_dates:.2f}), not running treetime. ")
         sys.exit(0)
-    refseq_len = get_refseq_len(subdir_path)
-    scale_branch_lengths(subdir_path, "optimized.scaled.nwk", refseq_len)
-    make_dates_csv(subdir_path, "dates.csv", name_to_date)
+    refseq_len = get_refseq_len(path)
+    #made it here
+    scale_branch_lengths(path, "optimized.scaled.nwk", refseq_len)
+    make_dates_csv(path, "dates.csv", name_to_date)
     command = ["treetime", "clock",
                "--sequence-length", str(refseq_len),
-               "--tree",  subdir_path + "/optimized.scaled.nwk",
-               "--dates", subdir_path + "/dates.csv",
-               "--outdir", subdir_path + "/treetime_out"]
+               "--tree",  path + "/optimized.scaled.nwk",
+               "--dates", path + "/dates.csv",
+               "--outdir", path + "/treetime_out"]
     try:
-        subprocess.run(command, check=True)
+        #subprocess.run(command, check=True)
+        with open(path + "/treetime.log", "w") as log_file:
+            subprocess.run(command, stdout=log_file)
     except Exception as e:
-        print(f"treetime command ({" ".join(command)}) failed: {e}", file=sys.stderr)
+        print(f"treetime command ({' '.join(command)}) failed: {e}", file=sys.stderr)
         sys.exit(1)
 
 
 def get_oldest_node(tree):
     """Extract the oldest internal node date from treetime's output file rtt.csv"""
     # oldest_node=$(grep ^node_ treetime_out/rtt.csv | sort -t, -k2n | head -1 | cut -d, -f 1)
-    rtt_csv_path = "/".join([viral_usher_trees.trees_dir, tree, "treetime_out", "rtt.csv"])
+    tree= tree.strip("/")
+    rtt_csv_path = "/".join([tree, "treetime_out", "rtt.csv"])
     min_date = None
     oldest_node = None
     with open(rtt_csv_path) as f:
@@ -154,12 +169,13 @@ def get_refseq_acc(config_path):
 
 def reroot_tree(tree, oldest_node):
     """Reroot optimized.pb.gz to oldest_node using matUtils and return path to rerooted .pb.gz."""
-    input_path = "/".join([viral_usher_trees.trees_dir, tree, "optimized.pb.gz"])
-    rerooted_tree_path = "/".join([viral_usher_trees.trees_dir, tree, "timetree_rerooted.pb.gz"])
-    config_path = "/".join([viral_usher_trees.trees_dir, tree, "config.toml"])
+    tree = tree.strip("/")
+    input_path = "/".join([tree, "optimized.pb.gz"])
+    rerooted_tree_path = "/".join([tree, "timetree_rerooted.pb.gz"])
+    config_path = "/".join([tree, "config.toml"])
     refseq_acc = get_refseq_acc(config_path)
-    ref_path = "/".join([viral_usher_trees.trees_dir, tree, refseq_acc + ".fa"])
-    modified_ref_path = "/".join([viral_usher_trees.trees_dir, tree, "treetime_rerooted_" + refseq_acc + ".fa"])
+    ref_path = "/".join([tree, refseq_acc + ".fa"])
+    modified_ref_path = "/".join([tree, "treetime_rerooted_" + refseq_acc + ".fa"])
     command = ["matUtils", "extract",
                "-i", input_path,
                "--reroot", oldest_node,
@@ -169,10 +185,10 @@ def reroot_tree(tree, oldest_node):
     try:
         subprocess.run(command, check=True)
     except Exception as e:
-        print(f"matUtils command ({" ".join(command)}) failed: {e}", file=sys.stderr)
+        print(f"matUtils command ({' '.join(command)}) failed: {e}", file=sys.stderr)
         sys.exit(1)
-    gbff_path = "/".join([viral_usher_trees.trees_dir, tree, refseq_acc + ".gbff"])
-    rerooted_gbff_path = "/".join([viral_usher_trees.trees_dir, tree, "treetime_rerooted_" + refseq_acc + ".gbff"])
+    gbff_path = "/".join([tree, refseq_acc + ".gbff"])
+    rerooted_gbff_path = "/".join([tree, "treetime_rerooted_" + refseq_acc + ".gbff"])
     alter_gbff.alter_gbff_file(gbff_path, refseq_acc, ref_path, rerooted_gbff_path)
     return rerooted_tree_path, rerooted_gbff_path
 
@@ -188,6 +204,25 @@ def get_columns_string(tsv_path):
     sys.exit(1)
 
 
+def make_taxonium(tree, rerooted_tree_path, rerooted_gbff_path):
+    """Run usher_to_taxonium on rerooted_tree"""
+    tree = tree.strip("/")
+    metadata_path = "/".join([tree, "metadata.tsv.gz"])
+    columns = get_columns_string(metadata_path)
+    taxonium_jsonl_path = "/".join([tree, "timetree_rerooted.jsonl.gz"])
+    command = ["usher_to_taxonium",
+               "-i", rerooted_tree_path,
+               "-m", metadata_path,
+               "--genbank", rerooted_gbff_path,
+               "-c", columns,
+               "--title", "Treetime-rerooted " + tree,
+               "-o", taxonium_jsonl_path]
+    try:
+        subprocess.run(command, check=True)
+    except Exception as e:
+        print(f"usher_to_taxonium command ({' '.join(command)}) failed: {e}", file=sys.stderr)
+        sys.exit(1)
+        
 def tweak_metadata(metadata_file: str):
     """Strip the long-names first column from the metadata file so the accession column is first."""
     # Make a temporary file that will need to be deleted later
@@ -202,42 +237,21 @@ def tweak_metadata(metadata_file: str):
     return tweaked_metadata_file
 
 
-def make_taxonium(tree, rerooted_tree_path, rerooted_gbff_path):
-    """Run usher_to_taxonium on rerooted_tree"""
-    input_metadata_path = "/".join([viral_usher_trees.trees_dir, tree, "metadata.tsv.gz"])
-    tmp_metadata_path = tweak_metadata(input_metadata_path)
-    columns = get_columns_string(tmp_metadata_path)
-    taxonium_jsonl_path = "/".join([viral_usher_trees.trees_dir, tree, "timetree_rerooted.jsonl.gz"])
-    command = ["usher_to_taxonium",
-               "--input", rerooted_tree_path,
-               "--metadata", tmp_metadata_path,
-               "--key_column", "accession",
-               "--genbank", rerooted_gbff_path,
-               "--columns", columns,
-               "--name_internal_nodes",
-               "--title", "Treetime-rerooted " + tree,
-               "--output", taxonium_jsonl_path]
-    try:
-        subprocess.run(command, check=True)
-    except Exception as e:
-        print(f"usher_to_taxonium command ({" ".join(command)}) failed: {e}", file=sys.stderr)
-        sys.exit(1)
-    os.remove(tmp_metadata_path)
-
-
 def main():
     parser = argparse.ArgumentParser(description="Use tree metadata TSV and trees/*/output_stats.tsv to make summary TSV")
-    parser.add_argument('-t', '--tree', required=True,
-                        help="Tree name (must match a name from the tree_name column of tree_metadata.tsv)")
+    parser.add_argument('-t', '--virus_path', required=True,
+                        help="Path to virus dir")
     parser.add_argument('-m', '--min_real_dates',
                         help=f"Minimum proportion of dates in metadata.tsv.gz that have real values (default: {default_min_real_dates})")
     args = parser.parse_args()
-    viral_usher_trees.check_top_level_dir()
+    #viral_usher_trees.check_top_level_dir()
     min_real_dates = args.min_real_dates if args.min_real_dates else default_min_real_dates
-    run_treetime(args.tree, min_real_dates)
-    oldest_node = get_oldest_node(args.tree)
-    rerooted_tree, rerooted_gbff = reroot_tree(args.tree, oldest_node)
-    make_taxonium(args.tree, rerooted_tree, rerooted_gbff)
+    #tree = args.virus_path.strip("/") + "/optimized.pb.gz"
+    #print(tree)
+    run_treetime(args.virus_path, min_real_dates)
+    oldest_node = get_oldest_node(args.virus_path)
+    rerooted_tree, rerooted_gbff = reroot_tree(args.virus_path, oldest_node)
+    make_taxonium(args.virus_path, rerooted_tree, rerooted_gbff)
 
 
 if __name__ == "__main__":
