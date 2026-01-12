@@ -4,7 +4,7 @@ If the proportion of non-empty date values in metadata.tsv.gz is high enough,
 then get the RefSeq length from output_stats.tsv, make a newick file with
 branch lengths scaled as substitutions per site, make a dates.csv file with
 added -XX for missing month and/or day, and run treetime to reroot the tree.
-Then apply the same rerooting to viz.pb.gz.
+Then apply the same rerooting to optimized.pb.gz.
 """
 
 import argparse
@@ -14,9 +14,10 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import treeswift
 
-#import viral_usher_trees
+import viral_usher_trees
 import alter_gbff
 
 default_min_real_dates = 0.8
@@ -26,16 +27,14 @@ def get_dates(subdir_path):
     """Scan metadata.tsv.gz, return a dict of names -> dates and the proportion of real date values to total count"""
     name_to_date = {}
     with gzip.open(subdir_path + "/metadata.tsv.gz", "rt") as f:
-        header = f.readline().split('\t')
-        for idx, field in enumerate(header):
-            header[idx] = field.strip()
-        name_idx = header.index('strain')
-        if name_idx != 0:
-            print(f"Uh-oh, name_idx is {name_idx}", file=sys.stderr)
+        header = [field.strip() for field in f.readline().split('\t')]
+        name_idx = header.index('accession')
+        if name_idx < 0:
+            print(subdir_path + "/metadata.tsv.gz does not have accession column", file=sys.stderr)
             sys.exit(1)
         date_idx = header.index('date')
         if date_idx < 0:
-            print(subdir_path + "/metadata.tsv.gz" + " does not have date column", file=sys.stderr)
+            print(subdir_path + "/metadata.tsv.gz does not have date column", file=sys.stderr)
             sys.exit(1)
         line_count = 0
         real_date_count = 0
@@ -52,9 +51,19 @@ def get_dates(subdir_path):
 
 def scale_branch_lengths(subdir_path, newick_out, refseq_len):
     """Use treeswift (included with taxoniumtools) to scale branch lengths as expected by treetime"""
-    tree = treeswift.read_tree_newick(subdir_path + "/viz.nwk.gz")
+    tmp_newick_path = subdir_path + "/optimized.nwk"
+    command = ["matUtils", "extract",
+               "-i", subdir_path + "/optimized.pb.gz",
+               "-t", tmp_newick_path]
+    try:
+        subprocess.run(command, check=True)
+    except Exception as e:
+        print(f"matUtils command ({" ".join(command)}) failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    tree = treeswift.read_tree_newick(tmp_newick_path)
     tree.scale_edges(1.0 / refseq_len)
     tree.write_tree_newick(subdir_path + "/" + newick_out)
+    os.remove(tmp_newick_path)
 
 
 def make_dates_csv(subdir_path, dates_out, name_to_date):
@@ -108,11 +117,11 @@ def run_treetime(path, min_real_dates):
         sys.exit(0)
     refseq_len = get_refseq_len(path)
     #made it here
-    scale_branch_lengths(path, "viz.scaled.nwk", refseq_len)
+    scale_branch_lengths(path, "optimized.scaled.nwk", refseq_len)
     make_dates_csv(path, "dates.csv", name_to_date)
     command = ["treetime", "clock",
                "--sequence-length", str(refseq_len),
-               "--tree",  path + "/viz.scaled.nwk",
+               "--tree",  path + "/optimized.scaled.nwk",
                "--dates", path + "/dates.csv",
                "--outdir", path + "/treetime_out"]
     try:
@@ -159,9 +168,9 @@ def get_refseq_acc(config_path):
 
 
 def reroot_tree(tree, oldest_node):
-    """Reroot viz.pb.gz to oldest_node using matUtils and return path to rerooted .pb.gz."""
+    """Reroot optimized.pb.gz to oldest_node using matUtils and return path to rerooted .pb.gz."""
     tree = tree.strip("/")
-    input_path = "/".join([tree, "viz.pb.gz"])
+    input_path = "/".join([tree, "optimized.pb.gz"])
     rerooted_tree_path = "/".join([tree, "timetree_rerooted.pb.gz"])
     config_path = "/".join([tree, "config.toml"])
     refseq_acc = get_refseq_acc(config_path)
@@ -213,6 +222,19 @@ def make_taxonium(tree, rerooted_tree_path, rerooted_gbff_path):
     except Exception as e:
         print(f"usher_to_taxonium command ({' '.join(command)}) failed: {e}", file=sys.stderr)
         sys.exit(1)
+        
+def tweak_metadata(metadata_file: str):
+    """Strip the long-names first column from the metadata file so the accession column is first."""
+    # Make a temporary file that will need to be deleted later
+    tweaked_metadata_file = ""
+    with tempfile.NamedTemporaryFile(suffix='.tsv.gz', delete=False) as tmp:
+        tweaked_metadata_file = tmp.name
+        with gzip.GzipFile(fileobj=tmp, mode='w') as gz_file:
+            with gzip.open(metadata_file, 'rt') if metadata_file.endswith('.gz') else open(metadata_file) as f:
+                for line in f:
+                    words = line.split("\t")
+                    gz_file.write("\t".join(words[1:]).encode('utf-8'))
+    return tweaked_metadata_file
 
 
 def main():
